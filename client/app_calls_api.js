@@ -68,17 +68,9 @@ function connectDataWs() {
 // --- Calls API WebSocket (for audio) ---
 async function connectCallsWs() {
   try {
-    // Get agent info from our server
-    const tokenResp = await fetch('/api/token');
-    const tokenData = await tokenResp.json();
-    agentId = tokenData.agent_id;
-    const endpoint = tokenData.endpoint;
-
-    if (!agentId) {
-      throw new Error('Failed to get agent ID');
-    }
-
-    // Connect to Calls API
+    // For development, connect directly without token
+    const endpoint = "wss://api.cartesia.ai/agents/stream/agent_aFXBG3ULr9CUndb4zHr6dv";
+    
     console.log('Connecting to Calls API at:', endpoint);
     callsWs = new WebSocket(endpoint);
     

@@ -163,11 +163,7 @@ async def get_curriculum(page_id: str = ""):
 @api_router.get("/token")
 async def get_calls_token():
     """Return Cartesia agent info for Calls API."""
-    if not config.CARTESIA_API_KEY:
-        raise HTTPException(status_code=500, detail="CARTESIA_API_KEY not set")
-    
-    # For development, return the deployed agent ID
-    # The client will use this to connect directly to the deployed agent
+    # For development, return agent info directly
     return {
         "agent_id": "agent_aFXBG3ULr9CUndb4zHr6dv",
         "endpoint": f"wss://api.cartesia.ai/agents/stream/agent_aFXBG3ULr9CUndb4zHr6dv"
