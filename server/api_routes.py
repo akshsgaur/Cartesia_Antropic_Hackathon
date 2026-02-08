@@ -160,27 +160,18 @@ async def get_curriculum(page_id: str = ""):
     return {"curriculum": curriculum.to_dict()}
 
 
-@api_router.post("/token")
+@api_router.get("/token")
 async def get_calls_token():
-    """Proxy to Cartesia access-token API for Calls."""
+    """Return Cartesia agent info for Calls API."""
     if not config.CARTESIA_API_KEY:
         raise HTTPException(status_code=500, detail="CARTESIA_API_KEY not set")
-
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            "https://api.cartesia.ai/agents/access-token",
-            headers={
-                "X-API-Key": config.CARTESIA_API_KEY,
-                "Cartesia-Version": "2025-04-16",
-            },
-        )
-        if resp.status_code != 200:
-            raise HTTPException(
-                status_code=resp.status_code,
-                detail=f"Cartesia token error: {resp.text}",
-            )
-        data = resp.json()
-        return data
+    
+    # For development, return the deployed agent ID
+    # The client will use this to connect directly to the deployed agent
+    return {
+        "agent_id": "agent_aFXBG3ULr9CUndb4zHr6dv",
+        "endpoint": f"wss://api.cartesia.ai/agents/stream/agent_aFXBG3ULr9CUndb4zHr6dv"
+    }
 
 
 @api_router.post("/analyze")

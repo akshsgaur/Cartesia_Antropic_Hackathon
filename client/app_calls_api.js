@@ -68,21 +68,31 @@ function connectDataWs() {
 // --- Calls API WebSocket (for audio) ---
 async function connectCallsWs() {
   try {
-    // Get access token from our server
+    // Get agent info from our server
     const tokenResp = await fetch('/api/token');
     const tokenData = await tokenResp.json();
-    accessToken = tokenData.access_token;
     agentId = tokenData.agent_id;
+    const endpoint = tokenData.endpoint;
 
-    if (!accessToken || !agentId) {
-      throw new Error('Failed to get Calls API credentials');
+    if (!agentId) {
+      throw new Error('Failed to get agent ID');
     }
 
     // Connect to Calls API
-    callsWs = new WebSocket(`wss://api.cartesia.ai/agents/stream/${agentId}`);
+    console.log('Connecting to Calls API at:', endpoint);
+    callsWs = new WebSocket(endpoint);
+    
+    // Add connection timeout
+    const connectionTimeout = setTimeout(() => {
+      if (callsWs.readyState === WebSocket.CONNECTING) {
+        console.error('Calls API connection timeout');
+        addMessage('error', '🎤 Connection timeout - please try again');
+      }
+    }, 10000); // 10 second timeout
 
     callsWs.onopen = () => {
       console.log('Calls API connected');
+      clearTimeout(connectionTimeout); // Clear timeout on successful connection
       
       // Send start event
       callsWs.send(JSON.stringify({
@@ -108,7 +118,14 @@ async function connectCallsWs() {
     };
 
     callsWs.onerror = (err) => {
-      console.error('Calls API error:', err);
+      console.error('Calls API WebSocket error:', err);
+      console.error('Error details:', {
+        code: err.code,
+        reason: err.reason,
+        wasClean: err.wasClean,
+        url: callsWs.url
+      });
+      addMessage('error', `🎤 Audio Error: ${err.reason || err.message}`);
     };
 
     callsWs.onmessage = (event) => {
@@ -118,7 +135,19 @@ async function connectCallsWs() {
 
   } catch (err) {
     console.error('Failed to connect Calls API:', err);
-    addMessage('error', `🎤 Audio Error: ${err.message}`);
+    addMessage('error', `🎤 Calls API Error: ${err.message}`);
+    
+    // Fallback: try to use old audio system
+    console.log('Falling back to local audio system...');
+    addMessage('system', '🔄 Falling back to local audio processing...');
+    
+    // Load original app.js for fallback
+    const script = document.createElement('script');
+    script.src = '/static/app.js';
+    script.onload = () => {
+      console.log('Fallback audio system loaded');
+    };
+    document.head.appendChild(script);
   }
 }
 
