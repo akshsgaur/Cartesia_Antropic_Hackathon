@@ -84,7 +84,7 @@ async function connectCallsWs() {
     
     // Add connection timeout
     const connectionTimeout = setTimeout(() => {
-      if (callsWs.readyState === WebSocket.CONNECTING) {
+      if (callsWs && callsWs.readyState === WebSocket.CONNECTING) {
         console.error('Calls API connection timeout');
         addMessage('error', '🎤 Connection timeout - please try again');
       }
@@ -112,9 +112,10 @@ async function connectCallsWs() {
       }));
     };
 
-    callsWs.onclose = () => {
-      console.log('Calls API disconnected');
-      callsWs = null;
+    callsWs.onclose = (event) => {
+      console.log('Calls API disconnected', event);
+      // Don't clear callsWs here - let it be cleaned up in the catch block
+      clearTimeout(connectionTimeout); // Clear timeout if still running
     };
 
     callsWs.onerror = (err) => {
@@ -123,7 +124,7 @@ async function connectCallsWs() {
         code: err.code,
         reason: err.reason,
         wasClean: err.wasClean,
-        url: callsWs.url
+        url: callsWs ? callsWs.url : 'WebSocket not created'
       });
       addMessage('error', `🎤 Audio Error: ${err.reason || err.message}`);
     };
