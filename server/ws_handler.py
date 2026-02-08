@@ -16,6 +16,7 @@ from models import (
     MSG_ERROR, MSG_QUEST, MSG_QUEST_RESULT,
     SessionState,
 )
+from api_routes import set_repo_path
 
 logger = logging.getLogger(__name__)
 
@@ -142,24 +143,27 @@ async def handle_websocket(ws: WebSocket) -> None:
                                 
                                 # Send final response
                                 transition = result.get("transition", "Here's what I found:")
+                                final_voice = result.get("voice_answer", "")
                                 detailed_answer = result.get("detailed_answer", "")
                                 evidence = result.get("evidence")
-                                
-                                full_response = f"{transition} {detailed_answer}"
-                                
+
+                                # Use voice_answer for TTS (clean spoken text),
+                                # detailed_answer for the text panel (markdown with code refs)
+                                tts_text = f"{transition} {final_voice}" if final_voice else detailed_answer
+
                                 await send_json(ws, MSG_RESPONSE_TEXT, {
-                                    "voice_answer": voice_answer,  # Keep original acknowledgment
-                                    "detailed_answer": full_response,
+                                    "voice_answer": final_voice,
+                                    "detailed_answer": detailed_answer,
                                 })
                                 logger.info(">>> Sent final detailed response")
-                                
+
                                 if evidence:
                                     await send_json(ws, MSG_EVIDENCE, {"evidence": evidence.to_dict()})
-                                
-                                # Speak the detailed answer
-                                if tts_client:
-                                    logger.info(">>> Starting detailed TTS: %s", full_response[:80])
-                                    await tts_client.speak(full_response, ws, session)
+
+                                # Speak the voice-optimized answer (no markdown/code)
+                                if tts_client and tts_text:
+                                    logger.info(">>> Starting detailed TTS: %s", tts_text[:80])
+                                    await tts_client.speak(tts_text, ws, session)
                                 
                             except asyncio.TimeoutError:
                                 logger.warning("Background processing timed out")
@@ -217,6 +221,9 @@ async def handle_websocket(ws: WebSocket) -> None:
                 repo_path = msg.get("repo_path", REPO_PATH)
                 curriculum_page_id = msg.get("curriculum_page_id", NOTION_CURRICULUM_PAGE_ID)
                 session.repo_path = repo_path
+                
+                # Set repo path for API routes
+                set_repo_path(repo_path)
 
                 # --- Run all startup tasks in parallel ---
                 stt_client = CartesiaSTT(on_transcript=on_final_transcript)

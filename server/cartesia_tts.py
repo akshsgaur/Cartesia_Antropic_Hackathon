@@ -82,8 +82,8 @@ class CartesiaTTS:
             "model_id": "sonic-3",
             "transcript": text,
             "voice": {
-                "mode": "basic",
-                "__experimental__support": True,
+                "mode": "id",
+                "id": CARTESIA_VOICE_ID,
             },
             "output_format": {
                 "container": "raw",
@@ -97,11 +97,12 @@ class CartesiaTTS:
             await self._ws.send(json.dumps(request))
             logger.info("TTS request sent, waiting for response...")
 
+            chunk_count = 0
             while session.is_speaking:
                 try:
                     raw = await asyncio.wait_for(self._ws.recv(), timeout=10.0)
                 except asyncio.TimeoutError:
-                    logger.warning("TTS recv timeout")
+                    logger.warning("TTS recv timeout after %d chunks", chunk_count)
                     break
 
                 try:
@@ -113,6 +114,7 @@ class CartesiaTTS:
                     continue
 
                 if msg.get("type") == "chunk" and "data" in msg:
+                    chunk_count += 1
                     try:
                         await client_ws.send_json({
                             "type": MSG_AUDIO_CHUNK,
@@ -121,8 +123,12 @@ class CartesiaTTS:
                     except (WebSocketDisconnect, ClientDisconnected):
                         logger.warning("Client disconnected during TTS, stopping audio stream")
                         break
+                elif msg.get("type") == "error":
+                    logger.error("TTS error response: %s", msg)
+                    break
 
                 if msg.get("done", False):
+                    logger.info("TTS done, sent %d chunks", chunk_count)
                     break
 
         except websockets.ConnectionClosed:

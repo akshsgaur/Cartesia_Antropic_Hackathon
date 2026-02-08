@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 
 import config
 from ws_handler import handle_websocket
+from api_routes import api_router, set_repo_path
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,6 +17,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="RepoBuddy")
+
+# Include API routes
+app.include_router(api_router)
 
 # Serve client files
 CLIENT_DIR = Path(__file__).resolve().parent.parent / "client"

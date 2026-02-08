@@ -4,10 +4,22 @@ Makes RepoBuddy feel like talking to a friend rather than a robot.
 """
 
 import random
+import re
 import logging
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _matches_phrase(text: str, phrases: list[str]) -> bool:
+    """Check if text matches any phrase using word boundaries (not substring)."""
+    lowered = text.lower().strip().rstrip(".!?,")
+    for phrase in phrases:
+        # Use word boundary regex to avoid false matches like "hi" in "this"
+        if re.search(r'\b' + re.escape(phrase) + r'\b', lowered):
+            return True
+    return False
+
 
 # Immediate acknowledgments (under 1 second)
 IMMEDIATE_RESPONSES = [
@@ -48,60 +60,46 @@ QUICK_RESPONSES = {
         "Hi! Ready to explore this codebase together?",
         "Hello! I'm here to help you understand this project.",
     ],
-    "what_is_this": [
-        "This is RepoBuddy! It's a voice-powered code exploration tool.",
-        "You're looking at RepoBuddy - your friendly code exploration companion!",
-        "This is the RepoBuddy repository - it helps engineers understand codebases.",
-    ],
-    "features": [
-        "Let me tell you about the features! I can see several key ones...",
-        "Great question! This project has some awesome features...",
-        "Oh yeah! Let me walk you through the main features...",
-    ],
 }
+
+# Greeting patterns — only match standalone greetings, not words containing them
+GREETING_PATTERNS = ["hello", "hey there", "greetings"]
+# "hi" and "hey" only match at the START of the sentence to avoid false positives
+GREETING_START_PATTERNS = ["hi", "hey"]
+
 
 def get_immediate_acknowledgment(user_text: str, intent: str = "") -> str:
     """Get an immediate acknowledgment to start the conversation naturally."""
-    # Check for quick responses first
-    lowered = user_text.lower().strip()
-    
-    if any(word in lowered for word in ["hello", "hi", "hey", "greetings"]):
+    if intent == "greeting":
         return random.choice(QUICK_RESPONSES["greeting"])
-    
-    if any(word in lowered for word in ["what is this", "what is this repository", "what am i looking at"]):
-        return random.choice(QUICK_RESPONSES["what_is_this"])
-    
-    if any(word in lowered for word in ["features", "what can it do", "what does it do"]):
-        return random.choice(QUICK_RESPONSES["features"])
-    
-    # Default acknowledgment
     return random.choice(IMMEDIATE_RESPONSES)
+
 
 def get_thinking_filler() -> str:
     """Get a thinking filler to play while processing."""
     return random.choice(THINKING_FILLERS)
 
+
 def get_ready_transition() -> str:
     """Get a transition phrase when ready with the answer."""
     return random.choice(READY_TRANSITIONS)
 
+
 def classify_question_type(user_text: str) -> str:
-    """Quick classification for immediate responses."""
-    lowered = user_text.lower().strip()
-    
-    if any(word in lowered for word in ["hello", "hi", "hey", "greetings"]):
-        return "greeting"
-    
-    if any(word in lowered for word in ["what is this", "what is this repository", "what am i looking at", "what is"]):
-        return "what_is_this"
-    
-    if any(word in lowered for word in ["features", "what can it do", "what does it do", "tell me about"]):
-        return "features"
-    
-    if any(word in lowered for word in ["how", "how does", "how do"]):
-        return "how_question"
-    
-    if any(word in lowered for word in ["where", "where is", "where can"]):
-        return "where_question"
-    
+    """Quick classification for immediate responses.
+
+    Only 'greeting' triggers a canned response — everything else goes to Claude.
+    """
+    lowered = user_text.lower().strip().rstrip(".!?,")
+
+    # Check for standalone greetings (whole message is basically just a greeting)
+    # Only short messages (under 5 words) can be greetings
+    words = lowered.split()
+    if len(words) <= 4:
+        if _matches_phrase(lowered, GREETING_PATTERNS):
+            return "greeting"
+        # "hi" and "hey" only match at the very start
+        if words and words[0] in GREETING_START_PATTERNS:
+            return "greeting"
+
     return "general"

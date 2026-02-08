@@ -8,7 +8,7 @@ import asyncio
 
 from anthropic_client import call_claude, parse_json_response
 from orchestrator.router import route_and_plan
-from orchestrator.prompts import SYNTHESIZER_PROMPT, CHAT_GREETING_PROMPT
+from orchestrator.prompts import SYNTHESIZER_PROMPT
 from repo.evidence import collect_evidence
 from models import SessionState, EvidencePack
 from cache import get_cached_response, cache_response
@@ -47,8 +47,8 @@ async def handle_chat_turn(session: SessionState, user_text: str) -> dict[str, A
         question_type = classify_question_type(user_text)
         immediate_response = get_immediate_acknowledgment(user_text, question_type)
         
-        # For simple questions, return immediate response without processing
-        if question_type in ["greeting", "what_is_this", "features"]:
+        # Only greetings get canned responses — everything else goes to Claude
+        if question_type == "greeting":
             response = {
                 "voice_answer": immediate_response,
                 "detailed_answer": immediate_response,
@@ -112,18 +112,21 @@ async def _process_question_with_evidence(session: SessionState, user_text: str)
         
         # Generate detailed answer
         logger.info("Generating detailed answer...")
-        detailed_answer = await _generate_detailed_answer(
+        answer_data = await _generate_detailed_answer(
             session, user_text, plan, evidence
         )
+        voice_answer = answer_data.get("voice_answer", "")
+        detailed_answer = answer_data.get("detailed_answer", "")
         logger.info("Detailed answer generated: %s...", detailed_answer[:100])
-        
+
         # Get ready transition
         transition = get_ready_transition()
-        
+
         logger.info("Background processing complete, returning result")
         return {
             "thinking_filler": thinking_filler,
             "transition": transition,
+            "voice_answer": voice_answer,
             "detailed_answer": detailed_answer,
             "evidence": evidence,
             "conversation_stage": "ready"
@@ -139,36 +142,6 @@ async def _process_question_with_evidence(session: SessionState, user_text: str)
             "conversation_stage": "ready"
         }
 
-
-async def _handle_simple_chat(session: SessionState, user_text: str) -> dict[str, Any]:
-    """Handle greetings and off-topic messages — uses Haiku for speed."""
-    repo_name = session.repo_path.rstrip("/").split("/")[-1] if session.repo_path else "unknown"
-
-    prompt = CHAT_GREETING_PROMPT.format(
-        user_text=user_text,
-        repo_name=repo_name,
-        mode=session.mode,
-    )
-
-    try:
-        result = await call_claude(prompt, max_tokens=800, model="claude-haiku-4-5-20251001")
-        logger.info("Router received Claude response: %s...", result[:100])
-        data = parse_json_response(result)
-        logger.info("Router parsed response: intent=%s", data.get("intent"))
-        return {
-            "voice_answer": data.get("voice_answer", "Hey there!"),
-            "detailed_answer": data.get("detailed_answer", ""),
-            "evidence": EvidencePack(),
-            "glossary_updates": {},
-        }
-    except Exception as e:
-        logger.error("Simple chat error: %s", e)
-        return {
-            "voice_answer": "Hey! I'm here to help you explore this codebase. Ask me anything!",
-            "detailed_answer": "Ready to help with code exploration.",
-            "evidence": EvidencePack(),
-            "glossary_updates": {},
-        }
 
 
 async def _collect_evidence_background(
@@ -189,41 +162,13 @@ async def _collect_evidence_background(
     )
 
 
-async def _generate_voice_answer(
-    session: SessionState, 
-    user_text: str, 
-    plan: dict[str, Any]
-) -> str:
-    """Generate quick voice answer with minimal context for immediate response."""
-    # Use Haiku for speed with minimal context but include repo awareness
-    repo_name = session.repo_path.rstrip("/").split("/")[-1] if session.repo_path else "this repository"
-    
-    prompt = f"""Based on the user's question about {repo_name}, provide a brief, helpful voice answer (max 2 sentences).
-
-Question: {user_text}
-Intent: {plan.get('intent', 'unknown')}
-Repository: {repo_name}
-
-Be helpful and specific to the context. If asking about features, describe what you see. If asking what this is, identify it clearly."""
-
-    try:
-        result = await call_claude(
-            prompt, 
-            max_tokens=100,  # Very short response
-            model="claude-haiku-4-5-20251001"
-        )
-        return result.strip()
-    except Exception as e:
-        logger.error("Voice answer generation error: %s", e)
-        return f"I'm exploring {repo_name} to help answer that."
-
 
 async def _generate_detailed_answer(
     session: SessionState,
     user_text: str,
     plan: dict[str, Any],
     evidence: EvidencePack
-) -> str:
+) -> dict[str, str]:
     """Generate detailed answer with full evidence context."""
     curriculum_text = ""
     if session.curriculum:
@@ -243,12 +188,18 @@ async def _generate_detailed_answer(
     try:
         result = await call_claude(prompt, max_tokens=1000)  # Reduced from 1500
         data = parse_json_response(result)
-        
+
         glossary_updates = data.get("glossary_updates", {})
         if glossary_updates and isinstance(glossary_updates, dict):
             session.glossary.update(glossary_updates)
-            
-        return data.get("detailed_answer", "")
+
+        return {
+            "voice_answer": data.get("voice_answer", ""),
+            "detailed_answer": data.get("detailed_answer", ""),
+        }
     except Exception as e:
         logger.error("Detailed answer generation error: %s", e)
-        return f"I encountered an issue: {e}"
+        return {
+            "voice_answer": f"I encountered an issue looking into that.",
+            "detailed_answer": f"I encountered an issue: {e}",
+        }

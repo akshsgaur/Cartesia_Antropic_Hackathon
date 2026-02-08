@@ -1,0 +1,5 @@
+[agent]
+name = "repobuddy"
+
+[build]
+python_version = "3.11"
